@@ -34,39 +34,39 @@ class VideoRenderData {
     this.shouldOptimizeForNetworkUse = false,
     this.imageBytesWithCropping = false,
     String? id,
-  })  : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
-        assert(
-          (video != null) != (videoSegments != null),
-          'You must provide either video OR videoSegments, but not both',
-        ),
-        assert(
-          videoSegments == null || videoSegments.isNotEmpty,
-          'videoSegments must not be empty if provided',
-        ),
-        assert(
-          startTime == null || endTime == null || startTime < endTime,
-          'startTime must be before endTime',
-        ),
-        assert(
-          blur == null || blur >= 0,
-          '[blur] must be greater than or equal to 0',
-        ),
-        assert(
-          playbackSpeed == null || playbackSpeed > 0,
-          '[playbackSpeed] must be greater than 0',
-        ),
-        assert(
-          bitrate == null || bitrate > 0,
-          '[bitrate] must be greater than 0',
-        ),
-        assert(
-          originalAudioVolume == null || originalAudioVolume >= 0,
-          '[originalAudioVolume] must be greater than or equal to 0',
-        ),
-        assert(
-          customAudioVolume == null || customAudioVolume >= 0,
-          '[customAudioVolume] must be greater than or equal to 0',
-        );
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+       assert(
+         (video != null) != (videoSegments != null),
+         'You must provide either video OR videoSegments, but not both',
+       ),
+       assert(
+         videoSegments == null || videoSegments.isNotEmpty,
+         'videoSegments must not be empty if provided',
+       ),
+       assert(
+         startTime == null || endTime == null || startTime < endTime,
+         'startTime must be before endTime',
+       ),
+       assert(
+         blur == null || blur >= 0,
+         '[blur] must be greater than or equal to 0',
+       ),
+       assert(
+         playbackSpeed == null || playbackSpeed > 0,
+         '[playbackSpeed] must be greater than 0',
+       ),
+       assert(
+         bitrate == null || bitrate > 0,
+         '[bitrate] must be greater than 0',
+       ),
+       assert(
+         originalAudioVolume == null || originalAudioVolume >= 0,
+         '[originalAudioVolume] must be greater than or equal to 0',
+       ),
+       assert(
+         customAudioVolume == null || customAudioVolume >= 0,
+         '[customAudioVolume] must be greater than or equal to 0',
+       );
 
   /// Creates a [VideoRenderData] with a predefined quality preset.
   ///
