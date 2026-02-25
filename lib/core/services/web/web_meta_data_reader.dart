@@ -63,20 +63,18 @@ class WebMetaDataReader {
     });
 
     final result = await completer.future;
-    final originalResolution = Size(
+    // Web browsers report display dimensions directly (after rotation)
+    final resolution = Size(
       safeParseDouble(result['width']),
       safeParseDouble(result['height']),
     );
     int rotation = safeParseInt(result['rotation']);
-    bool isNormalRotated = rotation % 180 == 0;
 
     return VideoMetadata(
       duration: Duration(milliseconds: safeParseInt(result['duration'])),
       extension: result['extension'] ?? 'unknown',
       fileSize: safeParseInt(result['fileSize']),
-      resolution:
-          isNormalRotated ? originalResolution : originalResolution.flipped,
-      originalResolution: originalResolution,
+      resolution: resolution,
       rotation: rotation,
       bitrate: safeParseInt(result['bitrate']),
       title: result['title'] ?? '',

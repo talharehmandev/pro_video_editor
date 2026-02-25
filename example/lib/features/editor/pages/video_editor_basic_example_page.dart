@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' as io;
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -68,7 +69,6 @@ class _VideoEditorBasicExamplePageState
   String? _outputPath;
   final Map<String, Uint8List> _cachedKeyFrames = {};
   final Map<String, List<Uint8List>> _cachedKeyFrameList = {};
-  late List<AudioTrack> _audioTracks = kExampleAudioTracks;
 
   /// The duration it took to generate the exported video.
   Duration _videoGenerationTime = Duration.zero;
@@ -82,8 +82,9 @@ class _VideoEditorBasicExamplePageState
   late final ProImageEditorConfigs _configs = ProImageEditorConfigs(
     dialogConfigs: DialogConfigs(
       widgets: DialogWidgets(
-        loadingDialog: (message, configs) =>
-            VideoProgressAlert(taskId: _taskId),
+        loadingDialog: (message, configs) => VideoProgressAlert(
+          taskId: _taskId,
+        ),
       ),
     ),
     mainEditor: MainEditorConfigs(
@@ -100,14 +101,18 @@ class _VideoEditorBasicExamplePageState
         SubEditorMode.sticker,
       ],
       widgets: MainEditorWidgets(
-        removeLayerArea:
-            (removeAreaKey, editor, rebuildStream, isLayerBeingTransformed) =>
-                VideoEditorRemoveArea(
-                  removeAreaKey: removeAreaKey,
-                  editor: editor,
-                  rebuildStream: rebuildStream,
-                  isLayerBeingTransformed: isLayerBeingTransformed,
-                ),
+        removeLayerArea: (
+          removeAreaKey,
+          editor,
+          rebuildStream,
+          isLayerBeingTransformed,
+        ) =>
+            VideoEditorRemoveArea(
+          removeAreaKey: removeAreaKey,
+          editor: editor,
+          rebuildStream: rebuildStream,
+          isLayerBeingTransformed: isLayerBeingTransformed,
+        ),
       ),
     ),
     paintEditor: const PaintEditorConfigs(
@@ -125,21 +130,7 @@ class _VideoEditorBasicExamplePageState
         PaintMode.eraser,
       ],
     ),
-    audioEditor: AudioEditorConfigs(
-      audioTracks: _audioTracks,
-      widgets: AudioEditorWidgets(
-        appBar: (editorState, rebuildStream) => AppBar(
-          title: const Text('Audio'),
-          centerTitle: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () => _pickCustomAudio(editorState),
-            ),
-          ],
-        ),
-      ),
-    ),
+    audioEditor: AudioEditorConfigs(audioTracks: kExampleAudioTracks),
     clipsEditor: ClipsEditorConfigs(
       clips: [
         VideoClip(
@@ -162,6 +153,9 @@ class _VideoEditorBasicExamplePageState
       isAudioSupported: true,
       minTrimDuration: Duration(seconds: 7),
       playTimeSmoothingDuration: Duration(milliseconds: 600),
+    ),
+    imageGeneration: const ImageGenerationConfigs(
+      captureImageByteFormat: ImageByteFormat.rawStraightRgba,
     ),
   );
 
@@ -187,8 +181,7 @@ class _VideoEditorBasicExamplePageState
   /// Generates thumbnails for the given [_video].
   Future<void> _generateThumbnails({bool updateClipThumbnails = true}) async {
     if (!mounted) return;
-    var imageWidth =
-        MediaQuery.sizeOf(context).width /
+    var imageWidth = MediaQuery.sizeOf(context).width /
         _thumbnailCount *
         MediaQuery.devicePixelRatioOf(context);
 
@@ -212,9 +205,8 @@ class _VideoEditorBasicExamplePageState
       ),
     );
 
-    List<ImageProvider> temporaryThumbnails = thumbnailList
-        .map(MemoryImage.new)
-        .toList();
+    List<ImageProvider> temporaryThumbnails =
+        thumbnailList.map(MemoryImage.new).toList();
 
     if (updateClipThumbnails) {
       _configs.clipsEditor.clips.first = _configs.clipsEditor.clips.first
@@ -222,9 +214,8 @@ class _VideoEditorBasicExamplePageState
     }
 
     /// Optional precache every thumbnail
-    var cacheList = temporaryThumbnails.map(
-      (item) => precacheImage(item, context),
-    );
+    var cacheList =
+        temporaryThumbnails.map((item) => precacheImage(item, context));
     await Future.wait(cacheList);
     _thumbnails = temporaryThumbnails;
 
@@ -236,15 +227,16 @@ class _VideoEditorBasicExamplePageState
   Future<void> _initializePlayer() async {
     await _setMetadata();
 
-    _configs.clipsEditor.clips.first = _configs.clipsEditor.clips.first
-        .copyWith(duration: _videoMetadata.duration);
+    _configs.clipsEditor.clips.first =
+        _configs.clipsEditor.clips.first.copyWith(
+      duration: _videoMetadata.duration,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _generateThumbnails();
     });
 
-    _videoController = VideoPlayerController.asset(
-      kVideoEditorExampleAssetPath,
-    );
+    _videoController =
+        VideoPlayerController.asset(kVideoEditorExampleAssetPath);
 
     await Future.wait([
       _videoController.initialize(),
@@ -351,9 +343,8 @@ class _VideoEditorBasicExamplePageState
               flipY: parameters.flipY,
             )
           : null,
-      customAudioPath: await _audioService.safeCustomAudioPath(
-        customAudioTrack,
-      ),
+      customAudioPath:
+          await _audioService.safeCustomAudioPath(customAudioTrack),
       originalAudioVolume: originalVolume,
       customAudioVolume: overlayVolume,
       // bitrate: _videoMetadata.bitrate,
@@ -398,41 +389,6 @@ class _VideoEditorBasicExamplePageState
     }
   }
 
-  Future<void> _pickCustomAudio(dynamic editorState) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: false,
-    );
-
-    if (result != null && result.files.single.path != null) {
-      final file = result.files.single;
-      final path = file.path!;
-
-      LoadingDialog.instance.show(context, configs: _configs);
-      final meta = await _proVideoEditor.getMetadata(EditorVideo.file(path));
-      LoadingDialog.instance.hide();
-
-      setState(() {
-        _audioTracks = [
-          ..._audioTracks,
-          AudioTrack(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            title: file.name.split('.').first,
-            subtitle: 'Custom Sound',
-            duration: meta.duration,
-            audio: EditorAudio.file(io.File(path)),
-          ),
-        ];
-
-        // Update the configs with the new tracks
-        _configs.audioEditor.audioTracks = _audioTracks;
-      });
-
-      // Request a rebuild of the editor
-      editorState.rebuild();
-    }
-  }
-
   Future<VideoClip?> _addClip() async {
     // Open video picker
     final result = await FilePicker.platform.pickFiles(
@@ -463,7 +419,10 @@ class _VideoEditorBasicExamplePageState
     );
   }
 
-  Future<void> _mergeClips(List<VideoClip> clips) async {
+  Future<void> _mergeClips(
+    List<VideoClip> clips,
+    void Function(double) onProgress,
+  ) async {
     LoadingDialog.instance.show(context, configs: _configs);
     final directory = await getApplicationCacheDirectory();
     final updatedFile = File('${directory.path}/temp.mp4');
@@ -473,19 +432,21 @@ class _VideoEditorBasicExamplePageState
       updatedFile.path,
       VideoRenderData(
         id: _taskId,
-        videoSegments: clips.map((el) {
-          final clip = el.clip;
-          return VideoSegment(
-            video: EditorVideo.autoSource(
-              networkUrl: clip.networkUrl,
-              assetPath: clip.assetPath,
-              byteArray: clip.bytes,
-              file: clip.file,
-            ),
-            startTime: el.trimSpan?.start,
-            endTime: el.trimSpan?.end,
-          );
-        }).toList(),
+        videoSegments: clips.map(
+          (el) {
+            final clip = el.clip;
+            return VideoSegment(
+              video: EditorVideo.autoSource(
+                networkUrl: clip.networkUrl,
+                assetPath: clip.assetPath,
+                byteArray: clip.bytes,
+                file: clip.file,
+              ),
+              startTime: el.trimSpan?.start,
+              endTime: el.trimSpan?.end,
+            );
+          },
+        ).toList(),
       ),
     );
     if (!mounted) {
@@ -501,20 +462,19 @@ class _VideoEditorBasicExamplePageState
 
     final editor = _editorKey.currentState!;
 
-    _proVideoController =
-        ProVideoController(
-          videoPlayer: _buildVideoPlayer(),
-          initialResolution: _videoMetadata.resolution,
-          videoDuration: _videoMetadata.duration,
-          fileSize: _videoMetadata.fileSize,
-          thumbnails: _thumbnails,
-        )..initialize(
-          configsFunction: () => _configs.videoEditor,
-          callbacksAudioFunction: () =>
-              editor.audioEditorCallbacks ?? const AudioEditorCallbacks(),
-          callbacksFunction: () =>
-              editor.callbacks.videoEditorCallbacks ?? VideoEditorCallbacks(),
-        );
+    _proVideoController = ProVideoController(
+      videoPlayer: _buildVideoPlayer(),
+      initialResolution: _videoMetadata.resolution,
+      videoDuration: _videoMetadata.duration,
+      fileSize: _videoMetadata.fileSize,
+      thumbnails: _thumbnails,
+    )..initialize(
+        configsFunction: () => _configs.videoEditor,
+        callbacksAudioFunction: () =>
+            editor.audioEditorCallbacks ?? const AudioEditorCallbacks(),
+        callbacksFunction: () =>
+            editor.callbacks.videoEditorCallbacks ?? VideoEditorCallbacks(),
+      );
 
     /// FIXME: On android video metadata say it's 90deg rotated??
 
@@ -641,17 +601,18 @@ class _VideoEditorBasicExamplePageState
 
   Widget _buildVideoPlayer() {
     return ValueListenableBuilder(
-      valueListenable: _updateClipsNotifier,
-      builder: (_, isLoading, __) {
-        return Center(
-          child: isLoading
-              ? const CircularProgressIndicator.adaptive()
-              : AspectRatio(
-                  aspectRatio: _videoController.value.size.aspectRatio,
-                  child: VideoPlayer(_videoController),
-                ),
-        );
-      },
-    );
+        valueListenable: _updateClipsNotifier,
+        builder: (_, isLoading, __) {
+          return Center(
+            child: isLoading
+                ? const CircularProgressIndicator.adaptive()
+                : AspectRatio(
+                    aspectRatio: _videoController.value.size.aspectRatio,
+                    child: VideoPlayer(
+                      _videoController,
+                    ),
+                  ),
+          );
+        });
   }
 }

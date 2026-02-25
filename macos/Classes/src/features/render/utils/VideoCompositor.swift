@@ -111,9 +111,14 @@ class VideoCompositor: NSObject, AVVideoCompositing {
         }
         var outputImage = CIImage(cvPixelBuffer: sourceBuffer)
         
-        // 1: Apply layer instruction transform first (video scaling/centering)
-        // This ensures all videos are properly sized before applying user effects. 
-        // Note that's only required on macOS and iOS
+        // Apply layer instruction transform first (video scaling/centering/rotation)
+        // This ensures all videos are properly sized and oriented before applying user effects.
+        // The layerInstruction contains the preferredTransform which already handles video rotation
+        // from portrait to landscape or vice versa, so no additional orientation correction is needed.
+        //
+        // IMPORTANT: AVFoundation uses a top-left origin coordinate system (Y points down),
+        // while CIImage uses a bottom-left origin (Y points up). We need to convert the transform
+        // to work correctly with CIImage's coordinate system.
         if let instruction = request.videoCompositionInstruction as? AVMutableVideoCompositionInstruction,
            let layerInstruction = instruction.layerInstructions.first as? AVMutableVideoCompositionLayerInstruction {
             
@@ -130,44 +135,38 @@ class VideoCompositor: NSObject, AVVideoCompositing {
             )
             
             if hasTransform && !startTransform.isIdentity {
-                outputImage = outputImage.transformed(by: startTransform)
+                // Convert AVFoundation transform to CIImage coordinate system:
+                // 1. Flip Y axis before transform (go from CIImage coords to AVFoundation coords)
+                // 2. Apply the AVFoundation transform
+                // 3. Flip Y axis after transform (go back to CIImage coords)
+                let imageHeight = outputImage.extent.height
+                
+                // Flip Y: translate to top, scale Y by -1
+                let flipY = CGAffineTransform(scaleX: 1, y: -1)
+                    .translatedBy(x: 0, y: -imageHeight)
+                
+                // Convert transform: flipY * transform * flipY^-1
+                // But since flipY is its own inverse (when combined with translate), we use:
+                // result = flipY * transform * flipY (adjusted for new height after transform)
+                let convertedTransform = flipY
+                    .concatenating(startTransform)
+                
+                outputImage = outputImage.transformed(by: convertedTransform)
+                
+                // After transform, we need to flip back and normalize
+                let transformedExtent = outputImage.extent
+                let newHeight = transformedExtent.height
+                let flipBack = CGAffineTransform(scaleX: 1, y: -1)
+                    .translatedBy(x: 0, y: -newHeight)
+                
+                outputImage = outputImage.transformed(by: flipBack)
                 
                 // Normalize position to origin
-                let transformedExtent = outputImage.extent
-                if transformedExtent.origin.x != 0 || transformedExtent.origin.y != 0 {
+                let finalExtent = outputImage.extent
+                if finalExtent.origin.x != 0 || finalExtent.origin.y != 0 {
                     let translation = CGAffineTransform(
-                        translationX: -transformedExtent.origin.x,
-                        y: -transformedExtent.origin.y
-                    )
-                    outputImage = outputImage.transformed(by: translation)
-                }
-            }
-        }
-        
-        // 2: Apply orientation correction if needed
-        if shouldApplyOrientationCorrection {
-            let correctionAngle: Double
-
-            switch Int(videoRotationDegrees.rounded()) {
-            case 90:
-                correctionAngle = -.pi / 2
-            case -90, 270:
-                correctionAngle = .pi / 2
-            case 180, -180:
-                correctionAngle = .pi
-            default:
-                correctionAngle = 0
-            }
-
-            if correctionAngle != 0 {
-                let correctionTransform = CGAffineTransform(rotationAngle: correctionAngle)
-                outputImage = outputImage.transformed(by: correctionTransform)
-
-                let transformedExtent = outputImage.extent
-                if transformedExtent.origin.x < 0 || transformedExtent.origin.y < 0 {
-                    let translation = CGAffineTransform(
-                        translationX: -transformedExtent.origin.x,
-                        y: -transformedExtent.origin.y
+                        translationX: -finalExtent.origin.x,
+                        y: -finalExtent.origin.y
                     )
                     outputImage = outputImage.transformed(by: translation)
                 }
@@ -176,8 +175,53 @@ class VideoCompositor: NSObject, AVVideoCompositing {
 
         var center = CGPoint(x: outputImage.extent.midX, y: outputImage.extent.midY)
 
-        // 3: Apply user-defined effects (crop, rotation, flip, scale)
+        // Apply user-defined effects (crop, rotation, flip, scale)
         var transform = CGAffineTransform.identity
+        
+        // Apply LUT, blur, and flip BEFORE overlay when imageBytesWithCropping is enabled
+        // This ensures these effects only affect the video, not the overlay
+        if imageBytesWithCropping {
+            // Apply LUT to video only
+            let (lutData, lutSize) = getLUT()
+            if let lutData,
+                let lutFilter = CIFilter(name: "CIColorCube")
+            {
+                lutFilter.setValue(lutSize, forKey: "inputCubeDimension")
+                lutFilter.setValue(lutData, forKey: "inputCubeData")
+                lutFilter.setValue(outputImage, forKey: kCIInputImageKey)
+                if let filteredImage = lutFilter.outputImage {
+                    outputImage = filteredImage
+                }
+            }
+            
+            // Apply blur to video only
+            if blurSigma > 0 {
+                outputImage = outputImage.applyingGaussianBlur(sigma: blurSigma)
+            }
+            
+            // Apply flip to video only (before adding overlay)
+            if flipX || flipY {
+                let flipScaleX: CGFloat = flipX ? -1 : 1
+                let flipScaleY: CGFloat = flipY ? -1 : 1
+
+                let flipTransform = CGAffineTransform(translationX: center.x, y: center.y)
+                    .scaledBy(x: flipScaleX, y: flipScaleY)
+                    .translatedBy(x: -center.x, y: -center.y)
+
+                outputImage = outputImage.transformed(by: flipTransform)
+                
+                // Normalize position after flip
+                let flippedExtent = outputImage.extent
+                if flippedExtent.origin.x != 0 || flippedExtent.origin.y != 0 {
+                    let translation = CGAffineTransform(
+                        translationX: -flippedExtent.origin.x,
+                        y: -flippedExtent.origin.y
+                    )
+                    outputImage = outputImage.transformed(by: translation)
+                }
+                center = CGPoint(x: outputImage.extent.midX, y: outputImage.extent.midY)
+            }
+        }
         
         // Apply overlay BEFORE crop if imageBytesWithCropping is enabled
         if imageBytesWithCropping, let overlay = overlayImage {
@@ -230,8 +274,8 @@ class VideoCompositor: NSObject, AVVideoCompositing {
             center = CGPoint(x: outputImage.extent.midX, y: outputImage.extent.midY)
         }
 
-        // Flipping
-        if flipX || flipY {
+        // Flipping (only if NOT imageBytesWithCropping - otherwise already applied before overlay)
+        if !imageBytesWithCropping && (flipX || flipY) {
             let scaleX: CGFloat = flipX ? -1 : 1
             let scaleY: CGFloat = flipY ? -1 : 1
 
@@ -249,22 +293,24 @@ class VideoCompositor: NSObject, AVVideoCompositing {
 
         outputImage = outputImage.transformed(by: transform)
 
-        // Apply LUT
-        let (lutData, lutSize) = getLUT()
-        if let lutData,
-            let lutFilter = CIFilter(name: "CIColorCube")
-        {
-            lutFilter.setValue(lutSize, forKey: "inputCubeDimension")
-            lutFilter.setValue(lutData, forKey: "inputCubeData")
-            lutFilter.setValue(outputImage, forKey: kCIInputImageKey)
-            if let filteredImage = lutFilter.outputImage {
-                outputImage = filteredImage
+        // Apply LUT (only if NOT imageBytesWithCropping - otherwise already applied before overlay)
+        if !imageBytesWithCropping {
+            let (lutData, lutSize) = getLUT()
+            if let lutData,
+                let lutFilter = CIFilter(name: "CIColorCube")
+            {
+                lutFilter.setValue(lutSize, forKey: "inputCubeDimension")
+                lutFilter.setValue(lutData, forKey: "inputCubeData")
+                lutFilter.setValue(outputImage, forKey: kCIInputImageKey)
+                if let filteredImage = lutFilter.outputImage {
+                    outputImage = filteredImage
+                }
             }
-        }
 
-        // Apply blur
-        if blurSigma > 0 {
-            outputImage = outputImage.applyingGaussianBlur(sigma: blurSigma)
+            // Apply blur
+            if blurSigma > 0 {
+                outputImage = outputImage.applyingGaussianBlur(sigma: blurSigma)
+            }
         }
 
         // Apply overlay image (only if not already applied before crop)

@@ -10,7 +10,6 @@ class VideoMetadata {
     required this.duration,
     required this.extension,
     required this.fileSize,
-    required this.originalResolution,
     required this.resolution,
     required this.rotation,
     required this.bitrate,
@@ -30,20 +29,18 @@ class VideoMetadata {
   /// file size, and others.
   /// The [extension] is the video file format (e.g., 'mp4').
   factory VideoMetadata.fromMap(Map<dynamic, dynamic> value, String extension) {
-    final originalResolution = Size(
+    // All platforms now return display dimensions (after rotation correction)
+    final resolution = Size(
       safeParseDouble(value['width']),
       safeParseDouble(value['height']),
     );
     int rotation = safeParseInt(value['rotation']);
-    bool isNormalRotated = rotation % 180 == 0;
 
     return VideoMetadata(
       duration: Duration(milliseconds: safeParseInt(value['duration'])),
       extension: extension,
       fileSize: value['fileSize'] ?? 0,
-      resolution:
-          isNormalRotated ? originalResolution : originalResolution.flipped,
-      originalResolution: originalResolution,
+      resolution: resolution,
       rotation: rotation,
       bitrate: safeParseInt(value['bitrate']),
       audioDuration: value['audioDuration'] != null
@@ -85,28 +82,41 @@ class VideoMetadata {
   /// The effective display resolution of the video, represented as a [Size]
   /// object.
   ///
-  /// If the video is rotated by 90°, 270°, 450°, etc., the width and height
-  /// values are automatically swapped to reflect the actual orientation as
-  /// it appears in the video player.
+  /// This represents the actual dimensions as the video appears when played,
+  /// with any rotation already accounted for.
   ///
-  /// To retrieve the original, unrotated resolution, use [originalResolution].
+  /// To retrieve the raw resolution before rotation correction,
+  /// use [rawResolution].
   ///
   /// Example:
   /// ```dart
-  /// Size(1920, 1080) // Full HD resolution
+  /// Size(1080, 1920) // Portrait Full HD video
   /// ```
   final Size resolution;
 
-  /// The original resolution of the video before any rotation is applied.
+  /// The raw resolution of the video before rotation is applied.
   ///
-  /// Unlike [resolution], this value always represents the actual pixel
-  /// dimensions of the video file, regardless of its orientation.
+  /// This represents the actual pixel dimensions stored in the video file,
+  /// regardless of how it appears when played. For rotated videos (90° or
+  /// 270°), this will have width and height swapped compared to [resolution].
   ///
   /// Example:
   /// ```dart
-  /// Size(1080, 1920) // Portrait video in raw file
+  /// // For a portrait video with 90° rotation:
+  /// resolution    // Size(1080, 1920) - what you see
+  /// rawResolution // Size(1920, 1080) - what's stored
   /// ```
-  final Size originalResolution;
+  Size get rawResolution {
+    final isRotated90Or270 = rotation % 180 != 0;
+    return isRotated90Or270 ? resolution.flipped : resolution;
+  }
+
+  /// The original resolution of the video before rotation is applied.
+  ///
+  /// @Deprecated: Use [rawResolution] instead. This getter will be removed
+  /// in a future version.
+  @Deprecated('Use rawResolution instead')
+  Size get originalResolution => rawResolution;
 
   /// The rotation of the video.
   final int rotation;
@@ -168,7 +178,7 @@ class VideoMetadata {
     DateTime? date,
     int? fileSize,
     Size? resolution,
-    Size? originalResolution,
+    @Deprecated('No longer supported, has no effect') Size? originalResolution,
     int? rotation,
     Duration? duration,
     Duration? audioDuration,
@@ -185,7 +195,6 @@ class VideoMetadata {
       date: date ?? this.date,
       fileSize: fileSize ?? this.fileSize,
       resolution: resolution ?? this.resolution,
-      originalResolution: originalResolution ?? this.originalResolution,
       rotation: rotation ?? this.rotation,
       duration: duration ?? this.duration,
       audioDuration: audioDuration ?? this.audioDuration,
@@ -209,7 +218,6 @@ class VideoMetadata {
         other.date == date &&
         other.fileSize == fileSize &&
         other.resolution == resolution &&
-        other.originalResolution == originalResolution &&
         other.rotation == rotation &&
         other.duration == duration &&
         other.audioDuration == audioDuration &&
@@ -228,7 +236,6 @@ class VideoMetadata {
         date.hashCode ^
         fileSize.hashCode ^
         resolution.hashCode ^
-        originalResolution.hashCode ^
         rotation.hashCode ^
         duration.hashCode ^
         audioDuration.hashCode ^

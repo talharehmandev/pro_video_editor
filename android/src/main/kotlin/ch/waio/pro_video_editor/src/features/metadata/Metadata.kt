@@ -101,24 +101,27 @@ class Metadata(private val context: Context) {
                 "fileSize" to tempFile.length()
             )
 
-            // Define numeric metadata keys mapping
-            // These values require numeric parsing (Int or Double)
-            val numericMetadata = mapOf(
-                "duration" to MediaMetadataRetriever.METADATA_KEY_DURATION,
-                "width" to MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH,
-                "height" to MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT,
-                "rotation" to MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION,
-                "bitrate" to MediaMetadataRetriever.METADATA_KEY_BITRATE
-            )
+            // Extract duration and bitrate
+            metadata["duration"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0
+            metadata["bitrate"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0
 
-            // Extract and parse numeric metadata
-            // Duration is returned as Double (milliseconds), all others as Int
-            numericMetadata.forEach { (key, metadataKey) ->
-                val value = retriever.extractMetadata(metadataKey)
-                metadata[key] = when (key) {
-                    "duration" -> value?.toDoubleOrNull() ?: 0.0
-                    else -> value?.toIntOrNull() ?: 0
-                }
+            // Extract rotation
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            metadata["rotation"] = rotation
+
+            // Extract raw dimensions
+            val rawWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val rawHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+
+            // Apply rotation to get display dimensions (consistent with iOS/macOS)
+            // For 90° or 270° rotation, swap width and height
+            val isRotated90Or270 = rotation == 90 || rotation == 270
+            if (isRotated90Or270) {
+                metadata["width"] = rawHeight
+                metadata["height"] = rawWidth
+            } else {
+                metadata["width"] = rawWidth
+                metadata["height"] = rawHeight
             }
 
             // Extract audio track duration if audio track exists

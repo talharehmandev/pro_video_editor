@@ -32,10 +32,12 @@ void main() {
         case 'getPlatformVersion':
           return '42';
         case 'getMetadata':
+          // Native platforms now return display dimensions (after rotation)
+          // For a 90° rotated video, width and height are already swapped
           return {
             'duration': 1200,
-            'width': 1920,
-            'height': 1080,
+            'width': 1080, // Display width (after 90° rotation)
+            'height': 1920, // Display height (after 90° rotation)
             'rotation': 90,
             'extension': 'mp4',
           };
@@ -68,8 +70,8 @@ void main() {
     expect(result.resolution.width, 1080);
     expect(result.resolution.height, 1920);
 
-    expect(result.originalResolution.width, 1920);
-    expect(result.originalResolution.height, 1080);
+    expect(result.rawResolution.width, 1920);
+    expect(result.rawResolution.height, 1080);
 
     expect(result.rotation, 90);
     expect(result.extension, 'mp4');
