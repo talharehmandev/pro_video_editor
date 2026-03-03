@@ -30,12 +30,6 @@ public func applyBitrate(requestedBitrate: Int?, presetHint: String? = nil) -> S
 
         if bitrate >= 50_000_000 {
             if #available(iOS 11.0, *) {
-                return AVAssetExportPresetHEVC3840x2160  // Use 4K HEVC as max on iOS
-            } else {
-                return AVAssetExportPreset3840x2160
-            }
-        } else if bitrate >= 40_000_000 {
-            if #available(iOS 11.0, *) {
                 return AVAssetExportPresetHEVC3840x2160
             } else {
                 return AVAssetExportPreset3840x2160
@@ -46,23 +40,14 @@ public func applyBitrate(requestedBitrate: Int?, presetHint: String? = nil) -> S
             } else {
                 return AVAssetExportPreset1920x1080
             }
-        } else if bitrate >= 20_000_000 {
-            if #available(iOS 11.0, *) {
-                return AVAssetExportPresetHEVCHighestQuality
-            } else {
-                return AVAssetExportPresetHighestQuality
-            }
         } else if bitrate >= 10_000_000 {
+            // Safer to use HighestQuality for higher bitrates with custom compositions
             return AVAssetExportPresetHighestQuality
-        } else if bitrate >= 7_000_000 {
-            return AVAssetExportPreset1920x1080
         } else if bitrate >= 5_000_000 {
-            return AVAssetExportPreset1280x720
-        } else if bitrate >= 3_000_000 {
-            return AVAssetExportPreset960x540
+            // Use HighestQuality instead of fixed 1280x720 for better compatibility 
+            // with custom render sizes/crops on iOS
+            return AVAssetExportPresetHighestQuality
         } else if bitrate >= 2_000_000 {
-            return AVAssetExportPreset640x480
-        } else if bitrate >= 1_000_000 {
             return AVAssetExportPresetMediumQuality
         } else {
             return AVAssetExportPresetLowQuality

@@ -315,14 +315,17 @@ class VideoRenderData {
     double? scaleX = transform.scaleX;
     double? scaleY = transform.scaleY;
 
-    // Handle quality config for single video
+    // Handle quality config for scaling (either single video or segments)
     if (qualityConfig != null &&
         scaleX == null &&
         scaleY == null &&
-        video != null) {
-      final meta = await ProVideoEditor.instance.getMetadata(video!);
+        (video != null ||
+            (videoSegments != null && videoSegments!.isNotEmpty))) {
+      final referenceVideo = video ?? videoSegments!.first.video;
+      final meta = await ProVideoEditor.instance.getMetadata(referenceVideo);
       final originalResolution = meta.resolution;
       final targetResolution = qualityConfig!.resolution ?? originalResolution;
+
       scaleX = targetResolution.width / originalResolution.width;
       scaleY = targetResolution.height / originalResolution.height;
     }

@@ -14,6 +14,7 @@ internal class CompositionBuilder {
     private var customAudioPath: String?
     private var originalAudioVolume: Float = 1.0
     private var customAudioVolume: Float = 1.0
+    private var playbackSpeed: Float?
     
     /// Initializes builder with configuration.
     ///
@@ -61,6 +62,12 @@ internal class CompositionBuilder {
         return self
     }
     
+    /// Sets playback speed for entire composition.
+    func setPlaybackSpeed(_ speed: Float?) -> CompositionBuilder {
+        self.playbackSpeed = speed
+        return self
+    }
+    
     /// Builds the complete composition.
     ///
     /// - Returns: Tuple containing composition, video composition, render size, and audio mix
@@ -92,13 +99,26 @@ internal class CompositionBuilder {
         
         let videoResult = try await videoBuilder.build(in: composition)
         
+        // Apply playback speed to all tracks in composition
+        if let speed = playbackSpeed, speed > 0, speed != 1.0 {
+            applyPlaybackSpeed(composition: composition, speed: speed)
+        }
+        
+        // Calculate total duration after speed adjustment
+        let totalSpeedDuration: CMTime
+        if let speed = playbackSpeed, speed > 0, speed != 1.0 {
+            totalSpeedDuration = CMTimeMultiplyByFloat64(videoResult.totalDuration, multiplier: 1 / Double(speed))
+        } else {
+            totalSpeedDuration = videoResult.totalDuration
+        }
+        
         // Add custom audio track if provided
         var customAudioTrack: AVMutableCompositionTrack?
         if let customPath = customAudioPath, !customPath.isEmpty {
             print("🎵 Adding custom audio track: \(customPath)")
             let audioBuilder = AudioSequenceBuilder(
                 audioPath: customPath,
-                targetDuration: videoResult.totalDuration
+                targetDuration: totalSpeedDuration
             ).setVolume(customAudioVolume)
             
             customAudioTrack = try await audioBuilder.build(in: composition)
@@ -139,10 +159,20 @@ internal class CompositionBuilder {
         
         for (index, clipInstruction) in videoResult.clipInstructions.enumerated() {
             print("🎬 Processing instruction for clip \(index)")
-            print("   Time range: \(String(format: "%.2f", clipInstruction.timeRange.start.seconds))s - \(String(format: "%.2f", (clipInstruction.timeRange.start + clipInstruction.timeRange.duration).seconds))s")
+            
+            // Adjust time range for playback speed if necessary
+            var instructionTimeRange = clipInstruction.timeRange
+            if let speed = playbackSpeed, speed > 0, speed != 1.0 {
+                let scaledStart = CMTimeMultiplyByFloat64(instructionTimeRange.start, multiplier: 1 / Double(speed))
+                let scaledDuration = CMTimeMultiplyByFloat64(instructionTimeRange.duration, multiplier: 1 / Double(speed))
+                instructionTimeRange = CMTimeRange(start: scaledStart, duration: scaledDuration)
+                print("   ⚡ Scaled instruction time range for \(speed)x speed")
+            }
+
+            print("   Time range: \(String(format: "%.2f", instructionTimeRange.start.seconds))s - \(String(format: "%.2f", (instructionTimeRange.start + instructionTimeRange.duration).seconds))s")
             
             let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = clipInstruction.timeRange
+            instruction.timeRange = instructionTimeRange
             instruction.backgroundColor = CGColor(red: 0, green: 0, blue: 0, alpha: 1)
             
             // Create layer instruction for this clip segment

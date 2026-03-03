@@ -26,12 +26,14 @@ func applyComposition(
     videoClips: [VideoClip],
     videoEffects: VideoCompositorConfig,
     enableAudio: Bool,
+    playbackSpeed: Float?,
     customAudioPath: String?,
     originalAudioVolume: Float?,
     customAudioVolume: Float?
 ) async throws -> (AVMutableComposition, AVMutableVideoComposition, CGSize, AVAudioMix?) {
     return try await CompositionBuilder(videoClips: videoClips, videoEffects: videoEffects)
         .setEnableAudio(enableAudio)
+        .setPlaybackSpeed(playbackSpeed)
         .setCustomAudioPath(customAudioPath)
         .setOriginalAudioVolume(originalAudioVolume)
         .setCustomAudioVolume(customAudioVolume)

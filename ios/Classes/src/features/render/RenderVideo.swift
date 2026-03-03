@@ -58,7 +58,15 @@ class RenderVideo {
                 let handleCompletion: (Result<Data?, Error>) -> Void = { result in
                     switch result {
                     case .success(let data): onComplete(data)
-                    case .failure(let error): onError(error)
+                    case .failure(let error): 
+                        print("❌ RENDER ERROR: \(error.localizedDescription)")
+                        if let nsError = error as NSError? {
+                            print("   Domain: \(nsError.domain), Code: \(nsError.code)")
+                            if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                                print("   Underlying Error: \(underlying.localizedDescription)")
+                            }
+                        }
+                        onError(error)
                     }
                     finalize()
                 }
@@ -79,6 +87,12 @@ class RenderVideo {
                             outputURL = pathWithoutExtension.appendingPathExtension(requestedFormat)
                         } else {
                             outputURL = url
+                        }
+                        
+                        // Delete existing file if it exists to prevent export failure
+                        if FileManager.default.fileExists(atPath: outputURL.path) {
+                            print("🗑️ Deleting existing file at \(outputURL.path)")
+                            try? FileManager.default.removeItem(at: outputURL)
                         }
                     } else {
                         outputURL = temporaryURL(for: config.outputFormat)
@@ -105,13 +119,11 @@ class RenderVideo {
                             videoClips: config.videoClips,
                             videoEffects: effectsConfig,
                             enableAudio: config.enableAudio,
+                            playbackSpeed: config.playbackSpeed,
                             customAudioPath: config.customAudioPath,
                             originalAudioVolume: config.originalAudioVolume,
                             customAudioVolume: config.customAudioVolume
                         )
-
-                    // Apply playback speed to the entire composition
-                    applyPlaybackSpeed(composition: composition, speed: config.playbackSpeed)
 
                     // Get the first video track for orientation info
                     let firstClipURL = URL(fileURLWithPath: config.videoClips[0].inputPath)
@@ -166,21 +178,13 @@ class RenderVideo {
                         }
                     }
 
-                    let effectiveScaleX = config.scaleX ?? 1.0
-                    let effectiveScaleY = config.scaleY ?? 1.0
-
-                    if effectiveScaleX != 1.0 || effectiveScaleY != 1.0 {
-                        finalRenderSize = CGSize(
-                            width: finalRenderSize.width * CGFloat(effectiveScaleX),
-                            height: finalRenderSize.height * CGFloat(effectiveScaleY)
-                        )
-                    } else if effectsConfig.scaleX != 1.0 || effectsConfig.scaleY != 1.0 {
-                        finalRenderSize = CGSize(
-                            width: finalRenderSize.width * effectsConfig.scaleX,
-                            height: finalRenderSize.height * effectsConfig.scaleY
-                        )
-                    }
-
+                    // CRITICAL: Force render size to even integers for encoder compatibility
+                    finalRenderSize = CGSize(
+                        width: CGFloat(Int(round(finalRenderSize.width) / 2) * 2),
+                        height: CGFloat(Int(round(finalRenderSize.height) / 2) * 2)
+                    )
+                    
+                    print("📐 Final Render Size: \(finalRenderSize.width)x\(finalRenderSize.height)")
                     videoComposition.renderSize = finalRenderSize
 
                     let compositorClass = makeVideoCompositorSubclass(with: effectsConfig)

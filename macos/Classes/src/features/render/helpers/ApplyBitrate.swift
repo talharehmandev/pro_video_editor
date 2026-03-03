@@ -9,22 +9,14 @@ import Foundation
 ///
 /// - Parameters:
 ///   - requestedBitrate: Target bitrate in bits per second. If nil, returns highest quality.
+///   - sourceResolution: The resolution of the source video, used to pick a sensible default.
 ///   - presetHint: Optional preset hint (currently unused).
 /// - Returns: AVAssetExportPreset string matching the requested quality level.
-///
-/// Bitrate mapping:
-/// - ≥50 Mbps: 8K HEVC (macOS 12.1+)
-/// - ≥40 Mbps: 4K HEVC or H264
-/// - ≥30 Mbps: 1080p HEVC or H264
-/// - ≥20 Mbps: Highest quality HEVC or H264
-/// - ≥10 Mbps: Highest quality
-/// - ≥7 Mbps: 1080p
-/// - ≥5 Mbps: 720p
-/// - ≥3 Mbps: 540p
-/// - ≥2 Mbps: 480p
-/// - ≥1 Mbps: Medium quality
-/// - <1 Mbps: Low quality
-public func applyBitrate(requestedBitrate: Int?, presetHint: String? = nil) -> String {
+public func applyBitrate(
+    requestedBitrate: Int?,
+    sourceResolution: CGSize? = nil,
+    presetHint: String? = nil
+) -> String {
     if let bitrate = requestedBitrate {
         print("[\(Tags.render)] 📊 Requested bitrate: \(bitrate) bps (\(String(format: "%.1f", Double(bitrate) / 1_000_000)) Mbps)")
         print("[\(Tags.render)] ⚠️ AVAssetExportSession does not support custom bitrate directly - using closest preset")
@@ -68,6 +60,27 @@ public func applyBitrate(requestedBitrate: Int?, presetHint: String? = nil) -> S
         } else {
             return AVAssetExportPresetLowQuality
         }
+    }
+
+    // Default path when no bitrate is specified: Pick preset matching source resolution
+    if let resolution = sourceResolution {
+        let maxDim = max(resolution.width, resolution.height)
+        print("[\(Tags.render)] ℹ️ No bitrate specified. Choosing preset based on source resolution (\(Int(resolution.width))x\(Int(resolution.height)))")
+        
+        if maxDim > 3840 {
+            if #available(macOS 12.1, *) { return AVAssetExportPresetHEVC7680x4320 }
+        } else if maxDim > 1920 {
+            if #available(macOS 10.13, *) { return AVAssetExportPresetHEVC3840x2160 }
+            return AVAssetExportPreset3840x2160
+        } else if maxDim > 1280 {
+            return AVAssetExportPreset1920x1080
+        } else if maxDim > 960 {
+            return AVAssetExportPreset1280x720
+        } else if maxDim > 640 {
+            return AVAssetExportPreset960x540
+        }
+        
+        return AVAssetExportPresetMediumQuality
     }
 
     return AVAssetExportPresetHighestQuality

@@ -45,6 +45,37 @@ object MediaInfoExtractor {
     }
 
     /**
+     * Retrieves video dimensions from file.
+     *
+     * @param videoPath Absolute path to video file
+     * @return Pair of (width, height), or null if not found
+     */
+    fun getVideoDimensions(videoPath: String): Pair<Int, Int>? {
+        return try {
+            val extractor = MediaExtractor()
+            extractor.setDataSource(videoPath)
+            var dimensions: Pair<Int, Int>? = null
+
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("video/")) {
+                    val width = format.getInteger(MediaFormat.KEY_WIDTH)
+                    val height = format.getInteger(MediaFormat.KEY_HEIGHT)
+                    dimensions = Pair(width, height)
+                    break
+                }
+            }
+
+            extractor.release()
+            dimensions
+        } catch (e: Exception) {
+            Log.e(RENDER_TAG, "Failed to get video dimensions for $videoPath: ${e.message}")
+            null
+        }
+    }
+
+    /**
      * Retrieves audio duration from file.
      *
      * @param audioPath Absolute path to audio file

@@ -53,6 +53,8 @@ class RenderVideo(private val context: Context) {
         onComplete: (ByteArray?) -> Unit,
         onError: (Throwable) -> Unit
     ): RenderJobHandle {
+        val startTime = System.currentTimeMillis()
+        println("pro_video_editor -> START working for video render")
         // Determine output file location
         val outputFile =
             if (config.outputPath != null) {
@@ -72,7 +74,17 @@ class RenderVideo(private val context: Context) {
         val outputMimeType = mapFormatToMimeType(config.outputFormat)
         val encoderFactoryBuilder = DefaultEncoderFactory.Builder(context)
 
-        applyBitrate(encoderFactoryBuilder, outputMimeType, config.bitrate)
+        // Get dimensions for bitrate calculation if not specified
+        var sourceWidth: Int? = null
+        var sourceHeight: Int? = null
+        if (config.bitrate == null && config.videoClips.isNotEmpty()) {
+            ch.waio.pro_video_editor.src.features.render.helpers.MediaInfoExtractor.getVideoDimensions(config.videoClips[0].inputPath)?.let {
+                sourceWidth = it.first
+                sourceHeight = it.second
+            }
+        }
+
+        applyBitrate(encoderFactoryBuilder, outputMimeType, config.bitrate, sourceWidth, sourceHeight)
 
         val mainHandler = Handler(Looper.getMainLooper())
 
@@ -117,6 +129,8 @@ class RenderVideo(private val context: Context) {
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
                     shouldStopPolling.set(true)
+                    val duration = (System.currentTimeMillis() - startTime) / 1000.0
+                    println("pro_video_editor -> Video render FINISHED in ${String.format("%.2f", duration)} seconds")
                     try {
                         if (config.outputPath != null) {
                             // Output saved to file, return null
@@ -140,6 +154,8 @@ class RenderVideo(private val context: Context) {
                     exception: ExportException
                 ) {
                     shouldStopPolling.set(true)
+                    val duration = (System.currentTimeMillis() - startTime) / 1000.0
+                    println("pro_video_editor -> Video render FAILED after ${String.format("%.2f", duration)} seconds: ${exception.message}")
                     onError(exception)
                     if (config.outputPath == null) outputFile.delete()
                 }

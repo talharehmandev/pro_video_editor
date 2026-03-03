@@ -41,6 +41,8 @@ class RenderVideo {
         let handle = RenderJobHandle()
         queue.async(group: nil, qos: .default, flags: []) {
             let renderTask = Task {
+                let startTime = Date()
+                print("pro_video_editor -> START working for video render")
                 guard !config.videoClips.isEmpty else {
                     onError(
                         NSError(
@@ -56,10 +58,14 @@ class RenderVideo {
                     try? cleanup(config.outputPath == nil ? [outputURL] : [])
                 }
 
-                let handleCompletion: (Result<Data?, Error>) -> Void = { result in
+                    let duration = Date().timeIntervalSince(startTime)
                     switch result {
-                    case .success(let data): onComplete(data)
-                    case .failure(let error): onError(error)
+                    case .success(let data): 
+                        print("pro_video_editor -> Video render FINISHED in \(String(format: "%.2f", duration)) seconds")
+                        onComplete(data)
+                    case .failure(let error): 
+                        print("pro_video_editor -> Video render FAILED after \(String(format: "%.2f", duration)) seconds: \(error.localizedDescription)")
+                        onError(error)
                     }
                     finalize()
                 }
@@ -183,10 +189,20 @@ class RenderVideo {
 
                     videoComposition.renderSize = finalRenderSize
 
-                    let compositorClass = makeVideoCompositorSubclass(with: effectsConfig)
-                    videoComposition.customVideoCompositorClass = compositorClass
+                    // 1. Check if we can bypass the custom compositor (Fast Path)
+                    let needsCustomCompositing = (config.blur != nil && config.blur! > 0) ||
+                                                !config.colorMatrixList.isEmpty ||
+                                                config.imageData != nil
+                    
+                    if needsCustomCompositing {
+                        let compositorClass = makeVideoCompositorSubclass(with: effectsConfig)
+                        videoComposition.customVideoCompositorClass = compositorClass
+                        print("[\(Tags.render)] 🚀 Using custom VideoCompositor for advanced effects")
+                    } else {
+                        print("[\(Tags.render)] ⚡ Bypassing custom compositor for simple render (using native hardware acceleration)")
+                    }
 
-                    let preset = applyBitrate(requestedBitrate: config.bitrate)
+                    let preset = applyBitrate(requestedBitrate: config.bitrate, sourceResolution: renderSize)
 
                     let export = try prepareExportSession(
                         composition: composition,
