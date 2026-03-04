@@ -178,6 +178,14 @@ class RenderVideo {
                         }
                     }
 
+                    // Apply target resolution scaling to the render size
+                    let sX = CGFloat(config.scaleX ?? 1.0)
+                    let sY = CGFloat(config.scaleY ?? 1.0)
+                    finalRenderSize = CGSize(
+                        width: finalRenderSize.width * sX,
+                        height: finalRenderSize.height * sY
+                    )
+
                     // CRITICAL: Force render size to even integers for encoder compatibility
                     finalRenderSize = CGSize(
                         width: CGFloat(Int(round(finalRenderSize.width) / 2) * 2),
